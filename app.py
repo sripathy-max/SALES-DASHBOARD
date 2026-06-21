@@ -1,42 +1,45 @@
 import dash
-from dash import dcc, html, Input, Output, dash_table
+from dash import dash_table
 import dash_bootstrap_components as dbc
 import pandas as pd
-import plotly.graph_objects as go
-import sys
+import requests
+import io
 
-# --- Configuration ---
+# URL for the Key file
 CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSsJHa45XRLX8b4IgEcfpM2-xPuOlpnk6Q6yBquQDzDrKncYt6HhGFqUQ_kQRujGO_uf_MxlJ6CSG1i/pub?output=csv"
 
-# --- Data Loading ---
+# Load Data
 def get_data(url):
-    print("Attempting to load CSV...")
-    try:
-        df = pd.read_csv(url)
-        print(f"Columns found in CSV: {list(df.columns)}") # <--- THIS WILL FIX YOUR GUESSWORK
-        
-        id_cols = ["ZBM Name", "ABM Name", "HQ Name", "Item Cd", "Item Name", "State", "Mother Brand", "DGM"]
-        
-        # Verify columns exist
-        missing = [c for c in id_cols if c not in df.columns]
-        if missing:
-            print(f"CRITICAL ERROR: Columns missing: {missing}")
-            sys.exit(1) # Stops the app if columns are wrong
+    response = requests.get(url).content
+    df = pd.read_csv(io.StringIO(response.decode('utf-8')))
+    # Clean up empty columns if necessary
+    df = df.loc[:, ~df.columns.str.contains('^Unnamed')]
+    return df
 
-        date_cols = [c for c in df.columns if c not in id_cols]
-        df_long = df.melt(id_vars=id_cols, value_vars=date_cols, var_name="Date", value_name="Units")
-        df_long['Date'] = pd.to_datetime(df_long['Date'], errors='coerce')
-        df_long['Units'] = pd.to_numeric(df_long['Units'], errors='coerce').fillna(0)
-        return df_long
-    except Exception as e:
-        print(f"CRITICAL ERROR: {e}")
-        sys.exit(1)
-
-# Initialize Data
 df = get_data(CSV_URL)
 
-# --- App Setup ---
+# App Setup
 app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
-server = app.server 
+server = app.server
 
-# [Continue with your layout and callbacks here...]
+app.layout = dbc.Container([
+    dbc.Row([
+        dbc.Col(html.H2("Sales Key/Mapping Dashboard", className="text-center my-4"))
+    ]),
+    dbc.Row([
+        dbc.Col([
+            dash_table.DataTable(
+                id='data-table',
+                columns=[{"name": i, "id": i} for i in df.columns],
+                data=df.to_dict('records'),
+                page_size=20,
+                style_table={'overflowX': 'auto'},
+                style_cell={'textAlign': 'left', 'padding': '5px'},
+                style_header={'backgroundColor': '#f8f9fa', 'fontWeight': 'bold'}
+            )
+        ])
+    ])
+], fluid=True)
+
+if __name__ == '__main__':
+    app.run_server(debug=True)
